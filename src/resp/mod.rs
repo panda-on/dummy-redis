@@ -3,8 +3,11 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+use bytes::BytesMut;
 use enum_dispatch::enum_dispatch;
+use thiserror::Error;
 
+mod decode;
 mod encode;
 
 /*
@@ -27,7 +30,7 @@ Sets: ~<number-of-elements>\r\n<element-1>...<element-n>
 */
 
 #[enum_dispatch(RespEncode)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum RespFrame {
     SimpleString(SimpleString),
     SimpleError(SimpleError),
@@ -43,31 +46,31 @@ pub enum RespFrame {
     Set(RespSet),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub struct SimpleString(String);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub struct SimpleError(String);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub struct BulkString(Vec<u8>);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct RespArray(Vec<RespFrame>);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct NullBulkString;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct RespNull;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct RespNullArray;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct RespMap(BTreeMap<String, RespFrame>);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct RespSet(Vec<RespFrame>);
 
 impl SimpleString {
@@ -117,6 +120,11 @@ pub trait RespEncode {
     fn encode(self) -> Vec<u8>;
 }
 
+pub trait RespDecode: Sized {
+    const PREFIX: &'static str;
+    fn decode(buf: &mut BytesMut) -> Result<Self, RespError>;
+}
+
 impl Deref for SimpleString {
     type Target = String;
 
@@ -145,4 +153,21 @@ impl DerefMut for RespMap {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
+}
+
+#[derive(Debug, Error)]
+pub enum RespError {
+    #[error("Invalid frame: {0}")]
+    InvalidFrame(String),
+    #[error("Invalid length: {0}")]
+    InvalidFrameLength(String),
+    #[error("Invalid frame type: {0}")]
+    InvalidFrameType(String),
+    #[error("Not complete")]
+    NotComplete,
+
+    #[error("Parse int error: {0}")]
+    ParseIntError(#[from] std::num::ParseIntError),
+    #[error("Parse float error: {0}")]
+    ParseFloatError(#[from] std::num::ParseFloatError),
 }
