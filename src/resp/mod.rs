@@ -163,8 +163,8 @@ pub enum RespError {
     InvalidFrameLength(String),
     #[error("Invalid frame type: {0}")]
     InvalidFrameType(String),
-    #[error("Not complete")]
-    NotComplete,
+    #[error("RespFrame Incomplete")]
+    Incomplete,
 
     #[error("Parse int error: {0}")]
     ParseIntError(#[from] std::num::ParseIntError),
