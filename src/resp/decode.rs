@@ -21,7 +21,7 @@ use bytes::{Buf, BytesMut};
 
 use super::{
     BulkString, NullBulkString, RespArray, RespDecode, RespError, RespFrame, RespNull,
-    RespNullArray, SimpleError, SimpleString,
+    RespNullArray, RespSet, SimpleError, SimpleString,
 };
 
 const CRLF: &[u8] = b"\r\n";
@@ -52,7 +52,7 @@ impl RespDecode for RespFrame {
             Some(b'$') => Ok(BulkString::decode(buf)?.into()),
             Some(b'*') => Ok(RespArray::decode(buf)?.into()),
             // b'%' => RespMap::decode(buf),
-            // b'~' => RespSet::decode(buf),
+            Some(b'~') => Ok(RespSet::decode(buf)?.into()),
             // b'!' => SimpleError::decode(buf),
             _ => Err(RespError::Incomplete),
         };
@@ -250,9 +250,9 @@ fn find_crlf(buf: &mut BytesMut, nth: i32) -> Option<usize> {
 impl RespDecode for RespArray {
     const PREFIX: &'static str = "*";
     fn decode(buf: &mut BytesMut) -> Result<Self, RespError> {
-        let elem_len = calcu_array_len(buf, Self::PREFIX)?;
+        let (crlf_1st_idx, elem_len) = calc_total_length(buf, Self::PREFIX)?;
         let mut ret = Vec::with_capacity(elem_len);
-        buf.advance(2 + CRLF_LEN);
+        buf.advance(crlf_1st_idx + CRLF_LEN);
         for _ in 0..elem_len {
             let elem = RespFrame::decode(buf)?;
             ret.push(elem);
@@ -261,11 +261,10 @@ impl RespDecode for RespArray {
     }
 }
 
-fn calcu_array_len(buf: &mut BytesMut, prefix: &str) -> Result<usize, RespError> {
+fn calc_total_length(buf: &mut BytesMut, prefix: &str) -> Result<(usize, usize), RespError> {
     let crlf_idx = extra_simple_frame_data(prefix, buf)?;
-    // let elem_len = std::str::from_utf8(&buf[prefix.len()..crlf_idx])?;
     let elem_len = String::from_utf8_lossy(&buf[prefix.len()..crlf_idx]);
-    Ok(elem_len.parse::<usize>()?)
+    Ok((crlf_idx, elem_len.parse::<usize>()?))
 }
 
 // impl RespDecode for RespMap {
@@ -275,13 +274,19 @@ fn calcu_array_len(buf: &mut BytesMut, prefix: &str) -> Result<usize, RespError>
 //     }
 // }
 
-// impl RespDecode for RespSet {
-//     const PREFIX: &'static str = "~";
+impl RespDecode for RespSet {
+    const PREFIX: &'static str = "~";
 
-//     fn decode(buf: &mut BytesMut) -> Result<Self, RespError> {
-//         todo!()
-//     }
-// }
+    fn decode(buf: &mut BytesMut) -> Result<Self, RespError> {
+        let (crlf_1st_idx, len) = calc_total_length(buf, Self::PREFIX)?;
+        let mut frames = Vec::with_capacity(len);
+        buf.advance(crlf_1st_idx + CRLF_LEN);
+        for _ in 0..len {
+            frames.push(RespFrame::decode(buf)?);
+        }
+        Ok(RespSet::new(frames))
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -389,6 +394,26 @@ mod tests {
         let bulk_string2 = RespFrame::BulkString(BulkString::new(b"World"));
         let rval = RespFrame::Array(RespArray::new(vec![bulk_string1, bulk_string2]));
         assert_eq!(lval, rval);
+
+        let data = b"*10\r\n#t\r\n#t\r\n#t\r\n#t\r\n#t\r\n#t\r\n#t\r\n#t\r\n#t\r\n#t\r\n";
+        buf.extend_from_slice(data);
+        let frame = RespFrame::decode(&mut buf)?;
+        assert_eq!(
+            frame,
+            RespFrame::Array(RespArray(vec![RespFrame::Boolean(true); 10]))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_respset_decode() -> Result<()> {
+        let mut buf = BytesMut::new();
+        buf.extend_from_slice(b"~2\r\n$5\r\nHello\r\n$5\r\nWorld\r\n");
+        let frame = RespFrame::decode(&mut buf)?;
+        let bulk_string1 = RespFrame::BulkString(BulkString::new(b"Hello"));
+        let bulk_string2 = RespFrame::BulkString(BulkString::new(b"World"));
+        let rval = RespFrame::Set(RespSet::new(vec![bulk_string1, bulk_string2]));
+        assert_eq!(frame, rval);
         Ok(())
     }
 }

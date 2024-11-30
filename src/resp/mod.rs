@@ -58,13 +58,13 @@ pub struct BulkString(Vec<u8>);
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct RespArray(Vec<RespFrame>);
 
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq)]
 pub struct NullBulkString;
 
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq)]
 pub struct RespNull;
 
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq)]
 pub struct RespNullArray;
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
