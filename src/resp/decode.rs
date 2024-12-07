@@ -20,7 +20,7 @@ Sets: ~<number-of-elements>\r\n<element-1>...<element-n>
 use bytes::{Buf, BytesMut};
 
 use super::{
-    BulkString, NullBulkString, RespArray, RespDecode, RespError, RespFrame, RespNull,
+    BulkString, NullBulkString, RespArray, RespDecode, RespError, RespFrame, RespMap, RespNull,
     RespNullArray, RespSet, SimpleError, SimpleString,
 };
 
@@ -51,9 +51,8 @@ impl RespDecode for RespFrame {
             }
             Some(b'$') => Ok(BulkString::decode(buf)?.into()),
             Some(b'*') => Ok(RespArray::decode(buf)?.into()),
-            // b'%' => RespMap::decode(buf),
+            Some(b'%') => Ok(RespMap::decode(buf)?.into()),
             Some(b'~') => Ok(RespSet::decode(buf)?.into()),
-            // b'!' => SimpleError::decode(buf),
             _ => Err(RespError::Incomplete),
         };
         ret
@@ -65,15 +64,10 @@ impl RespDecode for SimpleString {
     const PREFIX: &'static str = "+";
 
     fn decode(buf: &mut BytesMut) -> Result<Self, RespError> {
-        let iter = buf.iter().peekable();
-        // split by \r\n and trim the first byte, leave the rest converted to string
-        let mut buf = Vec::new();
-        for b in iter {
-            if *b != b'+' && *b != b'\r' && *b != b'\n' {
-                buf.push(*b);
-            }
-        }
-        Ok(SimpleString::new(String::from_utf8_lossy(&buf).to_string()))
+        let crlf_end = extra_simple_frame_data(Self::PREFIX, buf)?;
+        let data = buf.split_to(crlf_end + CRLF_LEN);
+        let ret = String::from_utf8_lossy(&data[Self::PREFIX.len()..crlf_end]).to_string();
+        Ok(SimpleString(ret))
     }
 }
 
@@ -267,12 +261,20 @@ fn calc_total_length(buf: &mut BytesMut, prefix: &str) -> Result<(usize, usize),
     Ok((crlf_idx, elem_len.parse::<usize>()?))
 }
 
-// impl RespDecode for RespMap {
-//     const PREFIX: &'static str = "%";
-//     fn decode(buf: &mut BytesMut) -> Result<Self, RespError> {
-//         todo!()
-//     }
-// }
+impl RespDecode for RespMap {
+    const PREFIX: &'static str = "%";
+    fn decode(buf: &mut BytesMut) -> Result<Self, RespError> {
+        let (crlf_1st_idx, len) = calc_total_length(buf, Self::PREFIX)?;
+        let mut ret = RespMap::new();
+        buf.advance(crlf_1st_idx + CRLF_LEN);
+        for _ in 0..len {
+            let key = SimpleString::decode(buf)?;
+            let value = RespFrame::decode(buf)?;
+            ret.insert(key.0, value);
+        }
+        Ok(ret)
+    }
+}
 
 impl RespDecode for RespSet {
     const PREFIX: &'static str = "~";
@@ -297,10 +299,12 @@ mod tests {
     #[test]
     fn test_simple_string_decode() -> Result<()> {
         let mut buf = BytesMut::new();
-        buf.extend_from_slice(b"+OK\r\n \r\nHello\r\n");
+        buf.extend_from_slice(b"+OK\r\n");
         let frame = SimpleString::decode(&mut buf)?;
-        assert_eq!(frame, SimpleString("OK Hello".to_string()));
-        println!("{:?}", frame);
+        assert_eq!(frame, SimpleString("OK".to_string()));
+        buf.extend_from_slice(b"+Hello\r\n");
+        let frame = SimpleString::decode(&mut buf)?;
+        assert_eq!(frame, SimpleString("Hello".to_string()));
         Ok(())
     }
 
@@ -414,6 +418,28 @@ mod tests {
         let bulk_string2 = RespFrame::BulkString(BulkString::new(b"World"));
         let rval = RespFrame::Set(RespSet::new(vec![bulk_string1, bulk_string2]));
         assert_eq!(frame, rval);
+        Ok(())
+    }
+
+    #[test]
+    fn test_respmap_decode() -> Result<()> {
+        let mut buf = BytesMut::new();
+        buf.extend_from_slice(b"%1\r\n+Hello\r\n+World\r\n");
+        let frame = RespMap::decode(&mut buf)?;
+        let bulk_string2 = RespFrame::SimpleString(SimpleString("World".to_string()));
+        let mut rval = RespMap::new();
+        rval.insert("Hello".to_string(), bulk_string2);
+        assert_eq!(frame, rval);
+
+        buf.extend_from_slice(b"%2\r\n+hello\r\n$5\r\nworld\r\n+foo\r\n$3\r\nbar\r\n");
+        let frame = RespMap::decode(&mut buf)?;
+        let mut map = RespMap::new();
+        map.insert(
+            "hello".to_string(),
+            BulkString::new(b"world".to_vec()).into(),
+        );
+        map.insert("foo".to_string(), BulkString::new(b"bar".to_vec()).into());
+        assert_eq!(frame, map);
         Ok(())
     }
 }
