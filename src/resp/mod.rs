@@ -47,16 +47,16 @@ pub enum RespFrame {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
-pub struct SimpleString(String);
+pub struct SimpleString(pub(crate) String);
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub struct SimpleError(String);
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
-pub struct BulkString(Vec<u8>);
+pub struct BulkString(pub(crate) Vec<u8>);
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub struct RespArray(Vec<RespFrame>);
+pub struct RespArray(pub(crate) Vec<RespFrame>);
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq)]
 pub struct NullBulkString;
@@ -91,9 +91,23 @@ impl BulkString {
     }
 }
 
+impl AsRef<[u8]> for BulkString {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
 impl RespArray {
     pub fn new(v: impl Into<Vec<RespFrame>>) -> Self {
         RespArray(v.into())
+    }
+}
+
+impl Deref for RespArray {
+    type Target = Vec<RespFrame>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
