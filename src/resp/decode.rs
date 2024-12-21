@@ -75,20 +75,10 @@ impl RespDecode for SimpleError {
     const PREFIX: &'static str = "-";
 
     fn decode(buf: &mut BytesMut) -> Result<Self, RespError> {
-        // check the prefix
-        if buf.len() < 3 || buf[0] != b'-' {
-            return Err(RespError::InvalidFrameType(format!(
-                "expected prefix {:?} - but got {:?}",
-                Self::PREFIX,
-                buf[0]
-            )));
-        }
-        // get the start index and end index of the string
-        let start_idx = 1;
-        let end_idx = buf.len() - 2;
-        Ok(SimpleError(
-            String::from_utf8_lossy(&buf[start_idx..end_idx]).to_string(),
-        ))
+        let crlf_idx = extra_simple_frame_data(Self::PREFIX, buf)?;
+        let data = buf.split_to(crlf_idx + CRLF_LEN);
+        let mesg = String::from_utf8_lossy(&data[Self::PREFIX.len()..crlf_idx]).to_string();
+        Ok(SimpleError::new(mesg))
     }
 }
 

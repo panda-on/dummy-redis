@@ -46,13 +46,13 @@ pub enum RespFrame {
     Set(RespSet),
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd)]
 pub struct SimpleString(pub(crate) String);
 
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
-pub struct SimpleError(String);
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd)]
+pub struct SimpleError(pub(crate) String);
 
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd)]
 pub struct BulkString(pub(crate) Vec<u8>);
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
@@ -80,8 +80,8 @@ impl SimpleString {
 }
 
 impl SimpleError {
-    pub fn new(s: String) -> Self {
-        SimpleError(s)
+    pub fn new(s: impl Into<String>) -> Self {
+        SimpleError(s.into())
     }
 }
 

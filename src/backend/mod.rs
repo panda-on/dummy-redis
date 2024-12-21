@@ -3,7 +3,7 @@ use std::{ops::Deref, sync::Arc};
 use crate::RespFrame;
 use dashmap::DashMap;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Backend(Arc<BackendInner>);
 
 #[derive(Debug)]
